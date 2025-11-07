@@ -1,1 +1,1 @@
-# learning_based_iterative_solver_for_constrained_optimization
+# LISCO: Learning-based iterative solver for constrained optimization
