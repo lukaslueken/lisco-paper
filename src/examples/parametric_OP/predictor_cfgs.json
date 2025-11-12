@@ -1,0 +1,142 @@
+[
+    {
+        "mode": "predictor",
+        "model_cfg": {
+            "n_in": 50,
+            "n_out": 200,
+            "n_hidden_layers": 2,
+            "n_neurons": 512,
+            "act_fn": "gelu",
+            "output_act_fn": "linear"
+        },
+        "train_cfg": {
+            "N_epochs": 50000,
+            "batch_size": 4096,
+            "weight_decay": 0.0,
+            "lr": 0.001,
+            "use_amsgrad": true
+        },
+        "nlp_cfg": {
+            "op_name": "nonconvex_100x50x50_0",
+            "op_pth": "data\\nonconvex_100x50x50_0",
+            "eps": 1e-16,
+            "sigma": 0.01
+        },
+        "predictor_cfg": {
+            "convexification": true,
+            "torch_compiled": true
+        }
+    },
+    {
+        "mode": "predictor",
+        "model_cfg": {
+            "n_in": 50,
+            "n_out": 200,
+            "n_hidden_layers": 2,
+            "n_neurons": 512,
+            "act_fn": "gelu",
+            "output_act_fn": "linear"
+        },
+        "train_cfg": {
+            "N_epochs": 50000,
+            "batch_size": 4096,
+            "weight_decay": 0.0,
+            "lr": 0.001,
+            "use_amsgrad": true
+        },
+        "nlp_cfg": {
+            "op_name": "nonconvex_100x50x50_1",
+            "op_pth": "data\\nonconvex_100x50x50_1",
+            "eps": 1e-16,
+            "sigma": 0.01
+        },
+        "predictor_cfg": {
+            "convexification": true,
+            "torch_compiled": true
+        }
+    },
+    {
+        "mode": "predictor",
+        "model_cfg": {
+            "n_in": 50,
+            "n_out": 200,
+            "n_hidden_layers": 2,
+            "n_neurons": 512,
+            "act_fn": "gelu",
+            "output_act_fn": "linear"
+        },
+        "train_cfg": {
+            "N_epochs": 50000,
+            "batch_size": 4096,
+            "weight_decay": 0.0,
+            "lr": 0.001,
+            "use_amsgrad": true
+        },
+        "nlp_cfg": {
+            "op_name": "nonconvex_100x50x50_2",
+            "op_pth": "data\\nonconvex_100x50x50_2",
+            "eps": 1e-16,
+            "sigma": 0.01
+        },
+        "predictor_cfg": {
+            "convexification": true,
+            "torch_compiled": true
+        }
+    },
+    {
+        "mode": "predictor",
+        "model_cfg": {
+            "n_in": 50,
+            "n_out": 200,
+            "n_hidden_layers": 2,
+            "n_neurons": 512,
+            "act_fn": "gelu",
+            "output_act_fn": "linear"
+        },
+        "train_cfg": {
+            "N_epochs": 50000,
+            "batch_size": 4096,
+            "weight_decay": 0.0,
+            "lr": 0.001,
+            "use_amsgrad": true
+        },
+        "nlp_cfg": {
+            "op_name": "nonconvex_100x50x50_3",
+            "op_pth": "data\\nonconvex_100x50x50_3",
+            "eps": 1e-16,
+            "sigma": 0.01
+        },
+        "predictor_cfg": {
+            "convexification": true,
+            "torch_compiled": true
+        }
+    },
+    {
+        "mode": "predictor",
+        "model_cfg": {
+            "n_in": 50,
+            "n_out": 200,
+            "n_hidden_layers": 2,
+            "n_neurons": 512,
+            "act_fn": "gelu",
+            "output_act_fn": "linear"
+        },
+        "train_cfg": {
+            "N_epochs": 50000,
+            "batch_size": 4096,
+            "weight_decay": 0.0,
+            "lr": 0.001,
+            "use_amsgrad": true
+        },
+        "nlp_cfg": {
+            "op_name": "nonconvex_100x50x50_4",
+            "op_pth": "data\\nonconvex_100x50x50_4",
+            "eps": 1e-16,
+            "sigma": 0.01
+        },
+        "predictor_cfg": {
+            "convexification": true,
+            "torch_compiled": true
+        }
+    }
+]

@@ -1,0 +1,66 @@
+[
+    {
+        "mode": "solver",
+        "model_cfg": {
+            "n_in": 117,
+            "n_out": 114,
+            "n_hidden_layers": 4,
+            "n_neurons": 512,
+            "act_fn": "gelu",
+            "output_act_fn": "linear"
+        },
+        "train_cfg": {
+            "N_epochs": 500000,
+            "batch_size": 4096,
+            "weight_decay": 0.0,
+            "lr": 0.001,
+            "use_amsgrad": true,
+            "n_steps_max_total": 2000,
+            "n_steps_max_no_improvement": 5,
+            "Tk_lim": 1e-16,
+            "predictor_pth": "results\\predictor\\exp_0"
+        },
+        "nlp_cfg": {
+            "N": 10,
+            "eps": 1e-16,
+            "sigma": 0.01
+        },
+        "solver_cfg": {
+            "convexification": true,
+            "gamma": 0.1,
+            "torch_compiled": true
+        }
+    },
+    {
+        "mode": "solver",
+        "model_cfg": {
+            "n_in": 117,
+            "n_out": 114,
+            "n_hidden_layers": 4,
+            "n_neurons": 512,
+            "act_fn": "gelu",
+            "output_act_fn": "linear"
+        },
+        "train_cfg": {
+            "N_epochs": 500000,
+            "batch_size": 4096,
+            "weight_decay": 0.0,
+            "lr": 0.001,
+            "use_amsgrad": true,
+            "n_steps_max_total": 2000,
+            "n_steps_max_no_improvement": 5,
+            "Tk_lim": 1e-16,
+            "predictor_pth": null
+        },
+        "nlp_cfg": {
+            "N": 10,
+            "eps": 1e-16,
+            "sigma": 0.01
+        },
+        "solver_cfg": {
+            "convexification": true,
+            "gamma": 0.1,
+            "torch_compiled": true
+        }
+    }
+]

@@ -1,0 +1,29 @@
+[
+    {
+        "mode": "predictor",
+        "model_cfg": {
+            "n_in": 2,
+            "n_out": 114,
+            "n_hidden_layers": 4,
+            "n_neurons": 512,
+            "act_fn": "gelu",
+            "output_act_fn": "linear"
+        },
+        "train_cfg": {
+            "N_epochs": 50000,
+            "batch_size": 4096,
+            "weight_decay": 0.0,
+            "lr": 0.001,
+            "use_amsgrad": true
+        },
+        "nlp_cfg": {
+            "N": 10,
+            "eps": 1e-16,
+            "sigma": 0.01
+        },
+        "predictor_cfg": {
+            "convexification": true,
+            "torch_compiled": true
+        }
+    }
+]

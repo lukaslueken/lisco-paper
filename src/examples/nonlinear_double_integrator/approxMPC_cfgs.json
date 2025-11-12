@@ -1,0 +1,48 @@
+[
+    {
+        "mode": "approxMPC",
+        "model_cfg": {
+            "n_in": 2,
+            "n_out": 1,
+            "n_hidden_layers": 4,
+            "n_neurons": 512,
+            "act_fn": "gelu",
+            "output_act_fn": "linear"
+        },
+        "train_cfg": {
+            "N_epochs": 50000,
+            "batch_size": 4096,
+            "weight_decay": 0.0,
+            "use_amsgrad": true,
+            "lr": 0.001,
+            "train_data_pth": "data\\closed_loop_N_25000_Nsim_5_0\\nmpc_data.npz",
+            "val_data_pth": "data\\closed_loop_N_2500_Nsim_5_0\\nmpc_data.npz",
+            "use_lr_scheduler": false,
+            "stop_at_min_lr": false,
+            "lr_scheduler_patience": 500,
+            "lr_scheduler_cooldown": 500,
+            "lr_reduce_factor": 0.1,
+            "min_lr": 1e-09
+        },
+        "approxMPC_cfg": {
+            "scale_data": true,
+            "bounds": {
+                "x_lb": [
+                    -10.0,
+                    -10.0
+                ],
+                "x_ub": [
+                    10.0,
+                    10.0
+                ],
+                "u_lb": [
+                    -2.0
+                ],
+                "u_ub": [
+                    2.0
+                ]
+            },
+            "torch_compiled": true
+        }
+    }
+]
