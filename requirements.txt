@@ -161,6 +161,8 @@ stack-data==0.6.3
     # via ipython
 sympy==1.14.0
     # via torch
+--index-url https://download.pytorch.org/whl/cu128
+--extra-index-url https://pypi.org/simple
 torch==2.9.0 ; sys_platform != 'linux' and sys_platform != 'win32'
     # via lisco-paper
 torch==2.9.0+cu128 ; sys_platform == 'linux' or sys_platform == 'win32'

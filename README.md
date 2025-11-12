@@ -111,11 +111,12 @@ This example demonstrates LISCO on a nonlinear model predictive control (NMPC) p
 
 ## Requirements
 The project dependencies can be installed using either traditional pip/venv or the modern uv package manager (https://docs.astral.sh/uv/).
+If using pip/venv, please make sure to have Python 3.13 installed.
 
 **Using pip with virtual environment:**
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+py -3.13 -m venv venv  # On Windows with specific Python version
+venv\Scripts\activate  # On Windows 
 pip install -r requirements.txt
 ```
 
