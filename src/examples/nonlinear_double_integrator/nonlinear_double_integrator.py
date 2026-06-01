@@ -1265,8 +1265,8 @@ class NLPCasadi:
         self.standard_nlp = {
             "w": self.w,
             "f": self._build_objective(),
-            "g": self._build_equality_constraints(),
-            "h": self._build_inequality_constraints(),
+            "h": self._build_equality_constraints(),
+            "g": self._build_inequality_constraints(),
             "p": self.P,
             "nu": nu_sym,
             "lam": lam_sym,
