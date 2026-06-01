@@ -35,11 +35,11 @@ TOL = 1e-6
 
 # Specification of results to load and visualize
 results_to_visualize = {
-    "nonconvex_100x50x50_0": {"predictor": "exp_0", "solver": "exp_0"},
-    "nonconvex_100x50x50_1": {"predictor": "exp_0", "solver": "exp_0"},
-    "nonconvex_100x50x50_2": {"predictor": "exp_0", "solver": "exp_0"},
-    "nonconvex_100x50x50_3": {"predictor": "exp_0", "solver": "exp_0"},
-    "nonconvex_100x50x50_4": {"predictor": "exp_0", "solver": "exp_0"}
+    "nonconvex_100x50x50_0": {"predictor": "exp_0", "solver": "exp_0", "solver_no_pred": "exp_1"},
+    "nonconvex_100x50x50_1": {"predictor": "exp_0", "solver": "exp_0", "solver_no_pred": "exp_1"},
+    "nonconvex_100x50x50_2": {"predictor": "exp_0", "solver": "exp_0", "solver_no_pred": "exp_1"},
+    "nonconvex_100x50x50_3": {"predictor": "exp_0", "solver": "exp_0", "solver_no_pred": "exp_1"},
+    "nonconvex_100x50x50_4": {"predictor": "exp_0", "solver": "exp_0", "solver_no_pred": "exp_1"}
 }
 
 FILE_PTH = Path(__file__).parent.resolve()
@@ -97,6 +97,57 @@ def load_results(case_name: str, method: str, exp_id: str) -> Optional[Dict]:
     except FileNotFoundError:
         print(f"No results file found for {case_name}/{method} with exp_id {exp_id}")
         return None
+
+def as_string_scientific(x: float) -> str:
+    """Convert float to scientific notation string."""
+    if x == 0.0:
+        return "0.0"
+    else:
+        return f"{x:.2e}"
+
+def normalize_solver_config(config: dict) -> dict:
+    """Return solver-relevant config for equality checks, stripping predictor_pth."""
+    normalized = {
+        "mode": config.get("mode"),
+        "model_cfg": config.get("model_cfg", {}),
+        "train_cfg": dict(config.get("train_cfg", {})),
+        "nlp_cfg": config.get("nlp_cfg", {}),
+        "solver_cfg": config.get("solver_cfg", {}),
+        "dtype": config.get("dtype"),
+        "device": config.get("device"),
+    }
+    normalized["train_cfg"].pop("predictor_pth", None)
+    return normalized
+
+def assert_solver_configs_match(case_name: str, solver_result: Dict, solver_no_pred_result: Dict) -> None:
+    """Verify solver and solver_no_pred share the same config except for predictor_pth."""
+    a = normalize_solver_config(solver_result["config"])
+    b = normalize_solver_config(solver_no_pred_result["config"])
+    if a != b:
+        raise AssertionError(
+            f"{case_name}: solver and solver_no_pred configs differ beyond predictor_pth"
+        )
+
+def normalize_for_cross_case(config: dict) -> dict:
+    """Normalize config for cross-case comparison: strip predictor_pth, op_pth, op_name."""
+    normalized = normalize_solver_config(config)
+    case_specific_keys = {"op_pth", "op_name"}
+    normalized["nlp_cfg"] = {k: v for k, v in normalized["nlp_cfg"].items() if k not in case_specific_keys}
+    return normalized
+
+def assert_cross_case_configs_match(method: str, results_by_case: Dict) -> None:
+    """Verify all cases for a method share the same config, ignoring op_pth and predictor_pth."""
+    cases = list(results_by_case.keys())
+    if len(cases) < 2:
+        return
+    ref_case = cases[0]
+    ref_config = normalize_for_cross_case(results_by_case[ref_case]["config"])
+    for case_name in cases[1:]:
+        cur = normalize_for_cross_case(results_by_case[case_name]["config"])
+        if cur != ref_config:
+            raise AssertionError(
+                f"{method}: config for {case_name} differs from {ref_case} beyond op_pth/op_name/predictor_pth"
+            )
 
 def as_string_decimals(x: float, decimals: int = 3) -> str:
     """Format float as string with specified decimal places."""
@@ -257,18 +308,35 @@ for case_name, case_experiments in results_to_visualize.items():
     case_results = {}
     
     for method, exp_id in case_experiments.items():
-        result = load_results(case_name, method, exp_id)
+        # solver_no_pred lives in the "solver" folder on disk
+        load_method = "solver" if method == "solver_no_pred" else method
+        result = load_results(case_name, load_method, exp_id)
         if result is not None:
+            # Validate predictor usage
+            if method == "solver_no_pred":
+                assert result["config"]["train_cfg"]["predictor_pth"] is None, \
+                    f"{case_name}/solver_no_pred expected predictor_pth=None"
             case_results[method] = result
             print(f"  Loaded {method}: {exp_id}")
         else:
             print(f"  Failed to load {method}: {exp_id}")
-    
+
+    if "solver" in case_results and "solver_no_pred" in case_results:
+        assert_solver_configs_match(case_name, case_results["solver"], case_results["solver_no_pred"])
+        print(f"  Verified solver and solver_no_pred configs match (modulo predictor_pth)")
+
     all_results[case_name] = case_results
+
+# Cross-case config consistency check (per method, up to op_pth and predictor_pth)
+for method in ["predictor", "solver", "solver_no_pred"]:
+    method_results = {c: r[method] for c, r in all_results.items() if method in r}
+    if method_results:
+        assert_cross_case_configs_match(method, method_results)
+        print(f"Verified cross-case configs match for {method} (modulo op_pth, op_name, predictor_pth)")
 
 # Aggregate results across all cases for each method
 aggregated_data = {}
-for method in ["predictor", "solver"]:
+for method in ["predictor", "solver", "solver_no_pred"]:
     method_results = {case_name: case_results[method] 
                      for case_name, case_results in all_results.items() 
                      if method in case_results}
@@ -521,7 +589,18 @@ if "solver" in aggregated_data:
     all_iter_values = np.array(all_iter_values)
     all_solve_time_values = np.array(all_solve_time_values)
     all_success_rates = np.array(all_success_rates)
-    
+
+    # Collect raw speedup factors for solver_no_pred
+    all_speedup_values_no_pred = []
+    for case_name, case_results in all_results.items():
+        if "solver_no_pred" in case_results and case_results["solver_no_pred"] is not None:
+            solver_no_pred_eval = case_results["solver_no_pred"]["eval"]
+            if "cpu_speedup_factor_list" in solver_no_pred_eval:
+                all_speedup_values_no_pred.extend(solver_no_pred_eval["cpu_speedup_factor_list"])
+            else:
+                raise ValueError("Expected cpu_speedup_factor_list data for solver_no_pred")
+    all_speedup_values_no_pred = np.array(all_speedup_values_no_pred)
+
     # Build the table data - only showing solver results (w. predictor)
     table_rows = []
     
@@ -900,7 +979,7 @@ def plot_kkt_convergence_aggregated(all_results, ax=None, tol=None):
     # Configure plot
     ax.set_xlabel("Iteration")
     ax.set_ylabel(r"$||KKT||_{\infty}$")
-    ax.set_title(r"$\infty$-Norm of KKT conditions over iterations")
+    # ax.set_title(r"$\infty$-Norm of KKT conditions over iterations")
     # ax.set_title(r"$\infty$-Norm of KKT conditions over iterations (Parametric QP)")
     ax.legend()
     ax.set_yscale("log")
@@ -974,7 +1053,7 @@ def plot_speedup_histogram(speedup_factors: List[float], ax=None) -> None:
     ax.axvline(x=1, color='black', linestyle=':', linewidth=1)
     ax.set_xlabel("Speedup Factor (IPOPT time / LISCO time)")
     ax.set_ylabel("Frequency")
-    ax.set_title("Distribution of Speedup Factors vs. IPOPT")
+    # ax.set_title("Distribution of Speedup Factors vs. IPOPT")
     ax.grid(True, linestyle="--", linewidth=0.3)
     ax.set_ylim(0,500)
     
@@ -1014,6 +1093,353 @@ if len(all_speedup_values) > 0:
     
     plt.close(fig_speedup)
     print("Generated speedup histogram")
+
+# %% Generate Speedup Histogram Comparison (with vs without predictor)
+print("\nGenerating Speedup Histogram Comparison")
+
+if len(all_speedup_values) > 0 and len(all_speedup_values_no_pred) > 0:
+    fig, ax = plt.subplots(1, 1)
+
+    ax.hist(all_speedup_values, bins=50, alpha=0.7, color="blue", label='with predictor')
+    ax.hist(all_speedup_values_no_pred, bins=50, alpha=0.7, color="orange", label='without predictor')
+    ax.set_ylim(0, 500)
+
+    ax.axvline(x=1, color='black', linestyle=':', linewidth=1)
+    ax.set_xlabel("Speedup Factor (IPOPT time / LISCO time)")
+    ax.set_ylabel("Frequency")
+    ax.grid(True, linestyle="--", linewidth=0.3)
+
+    # Set x-axis ticks starting at 0 with increments of 1
+    max_speedup = max(np.max(all_speedup_values), np.max(all_speedup_values_no_pred))
+    ax.set_xticks(np.arange(0, int(max_speedup) + 2, 1))
+
+    # Calculate percentage of cases with speedup > 1 for both methods
+    n_speedup_with_pred = sum(1 for s in all_speedup_values if s > 1)
+    pct_speedup_with_pred = 100 * n_speedup_with_pred / len(all_speedup_values)
+
+    n_speedup_without_pred = sum(1 for s in all_speedup_values_no_pred if s > 1)
+    pct_speedup_without_pred = 100 * n_speedup_without_pred / len(all_speedup_values_no_pred)
+
+    # Display percentages in two separate text boxes with matching colors
+    ax.text(0.98, 0.98, f'with predictor: {pct_speedup_with_pred:.1f}% faster than IPOPT',
+        transform=ax.transAxes, ha='right', va='top',
+        bbox=dict(boxstyle='round', facecolor='blue', alpha=0.3, edgecolor='blue'))
+
+    ax.text(0.98, 0.88, f'without predictor: {pct_speedup_without_pred:.1f}% faster than IPOPT',
+        transform=ax.transAxes, ha='right', va='top',
+        bbox=dict(boxstyle='round', facecolor='orange', alpha=0.3, edgecolor='orange'))
+
+    save_path = RESULTS_PATH.joinpath(SAVE_FOLDER)
+    save_path.mkdir(parents=True, exist_ok=True)
+    speedup_comparison_plot_path_png = save_path.joinpath("speedup_histogram_comparison.png")
+    speedup_comparison_plot_path_pdf = save_path.joinpath("speedup_histogram_comparison.pdf")
+    fig.savefig(speedup_comparison_plot_path_png, bbox_inches='tight', dpi=300)
+    fig.savefig(speedup_comparison_plot_path_pdf, bbox_inches='tight', dpi=300)
+    print(f"Saved speedup histogram comparison to {speedup_comparison_plot_path_png}")
+    print(f"Saved speedup histogram comparison to {speedup_comparison_plot_path_pdf}")
+
+    plt.close(fig)
+    print("Generated speedup histogram comparison")
+else:
+    print("Insufficient speedup factors for comparison histogram")
+
+# %% Table: Inference Times (CPU and GPU)
+print("\n\nTable: Inference Times (CPU and GPU)")
+print("=" * 80)
+
+# Aggregate inference times across runs
+inference_methods_data = []
+
+# Predictor: cpu_single_inference_time_mean, gpu_batch_inference_time_mean
+predictor_cpu_times = []
+predictor_gpu_times = []
+for case_name, case_results in all_results.items():
+    if "predictor" in case_results and case_results["predictor"] is not None:
+        eval_data = case_results["predictor"]["eval"]
+        if "cpu_single_inference_time_mean" in eval_data:
+            predictor_cpu_times.append(eval_data["cpu_single_inference_time_mean"])
+        if "gpu_batch_inference_time_mean" in eval_data:
+            predictor_gpu_times.append(eval_data["gpu_batch_inference_time_mean"])
+
+if predictor_cpu_times or predictor_gpu_times:
+    inference_methods_data.append({
+        "Method": "Predictor",
+        "CPU Inference Time [s]": np.mean(predictor_cpu_times) if predictor_cpu_times else np.nan,
+        "GPU Batch Time [s]": np.mean(predictor_gpu_times) if predictor_gpu_times else np.nan,
+    })
+
+# Solver: cpu_step_time_mean, gpu_step_time_mean
+solver_cpu_times = []
+solver_gpu_times = []
+for case_name, case_results in all_results.items():
+    if "solver" in case_results and case_results["solver"] is not None:
+        eval_data = case_results["solver"]["eval"]
+        if "cpu_step_time_mean" in eval_data:
+            solver_cpu_times.append(eval_data["cpu_step_time_mean"])
+        if "gpu_step_time_mean" in eval_data:
+            solver_gpu_times.append(eval_data["gpu_step_time_mean"])
+
+if solver_cpu_times or solver_gpu_times:
+    inference_methods_data.append({
+        "Method": "Solver Single Step",
+        "CPU Inference Time [s]": np.mean(solver_cpu_times) if solver_cpu_times else np.nan,
+        "GPU Batch Time [s]": np.mean(solver_gpu_times) if solver_gpu_times else np.nan,
+    })
+
+if inference_methods_data:
+    inference_df = pd.DataFrame(inference_methods_data).set_index("Method")
+    inference_df_formatted = inference_df.copy()
+
+    for col in inference_df_formatted.columns:
+        if "Time" in col:
+            inference_df_formatted[col] = inference_df_formatted[col].apply(
+                lambda x: f"{x:.2e}" if pd.notna(x) else "N/A"
+            )
+
+    print(inference_df_formatted.to_string())
+
+    save_path = RESULTS_PATH.joinpath(SAVE_FOLDER)
+    save_path.mkdir(parents=True, exist_ok=True)
+    latex_path_inference = save_path.joinpath("table_inference_times.tex")
+    latex_string_inference = inference_df_formatted.to_latex(
+        escape=False,
+        column_format='l' + 'c' * len(inference_df_formatted.columns)
+    )
+    with open(latex_path_inference, 'w') as f:
+        f.write(latex_string_inference)
+    print(f"Saved inference times table to {latex_path_inference}")
+else:
+    print("No inference time data available")
+
+# %% Table: Extended CPU Performance Comparison (solver w. pred, solver w/o. pred, IPOPT, predictor)
+print("\n\nTable: Extended CPU Performance Comparison")
+print("=" * 80)
+
+# Load IPOPT solve times from case_study_data for all 5 runs
+all_ipopt_solve_times = []
+for case_name, case_results in all_results.items():
+    if "solver" in case_results and case_results["solver"] is not None:
+        cfg = case_results["solver"]["config"]
+        op_pth = cfg["nlp_cfg"]["op_pth"]
+        test_data_name = case_results["solver"]["eval"]["test_data"]
+        ipopt_data_path = FILE_PTH.joinpath(op_pth, test_data_name, "op_data.npz")
+        try:
+            ipopt_data = np.load(ipopt_data_path)
+            all_ipopt_solve_times.extend(ipopt_data["solve_time"].tolist())
+        except FileNotFoundError:
+            print(f"IPOPT data not found at {ipopt_data_path}")
+all_ipopt_solve_times = np.array(all_ipopt_solve_times)
+
+if len(all_ipopt_solve_times) > 0:
+    # Define table structure
+    columns_dict_extended = {
+        "solver_w_pred": "w. predictor",
+        "solver_wo_pred": "w/o. predictor",
+        "ipopt": "IPOPT",
+        "predictor": "predictor",
+    }
+
+    metric_names_extended = ["Speedup over IPOPT", "N Iterations", "Full Solve Time [s]"]
+    statistic_names_extended = ["max", "95", "med", "min"]
+
+    row_tuples_extended = []
+    for metric in metric_names_extended:
+        for stat in statistic_names_extended:
+            row_tuples_extended.append((metric, stat))
+    row_tuples_extended.append(("Success Rate", ""))
+
+    multi_index_extended = pd.MultiIndex.from_tuples(row_tuples_extended, names=['Metric', 'Statistic'])
+
+    def _build_extended_column(method_key, *, kind):
+        """Build a column of values for the extended performance table.
+
+        For solver methods: pool raw per-sample lists across all 5 runs.
+        For predictor: compute speedup from mean inference time vs IPOPT per-sample times.
+        For IPOPT: use pooled IPOPT solve times directly.
+        """
+        values = []
+        for metric in metric_names_extended:
+            for stat in statistic_names_extended:
+                if metric == "Speedup over IPOPT":
+                    if kind == "ipopt":
+                        values.append(np.nan)
+                    elif kind == "solver":
+                        # Pool speedup factor lists across all runs
+                        if method_key == "solver":
+                            pooled = all_speedup_values
+                        else:
+                            pooled = all_speedup_values_no_pred
+                        if len(pooled) > 0:
+                            if stat == "max":
+                                values.append(np.max(pooled))
+                            elif stat == "95":
+                                values.append(np.percentile(pooled, 95))
+                            elif stat == "med":
+                                values.append(np.median(pooled))
+                            elif stat == "min":
+                                values.append(np.min(pooled))
+                            else:
+                                values.append(np.nan)
+                        else:
+                            values.append(np.nan)
+                    elif kind == "predictor":
+                        # Compute speedup: IPOPT per-sample time / predictor mean inference time
+                        predictor_cpu_times_all = []
+                        for cn, cr in all_results.items():
+                            if "predictor" in cr and cr["predictor"] is not None:
+                                t = cr["predictor"]["eval"].get("cpu_single_inference_time_mean", np.nan)
+                                if not pd.isna(t):
+                                    predictor_cpu_times_all.append(t)
+                        mean_pred_time = np.mean(predictor_cpu_times_all) if predictor_cpu_times_all else np.nan
+                        if pd.isna(mean_pred_time) or mean_pred_time == 0:
+                            values.append(np.nan)
+                        else:
+                            per_sample_speedup = all_ipopt_solve_times / mean_pred_time
+                            if stat == "max":
+                                values.append(np.max(per_sample_speedup))
+                            elif stat == "95":
+                                values.append(np.percentile(per_sample_speedup, 95))
+                            elif stat == "med":
+                                values.append(np.median(per_sample_speedup))
+                            elif stat == "min":
+                                values.append(np.min(per_sample_speedup))
+                            else:
+                                values.append(np.nan)
+                    else:
+                        values.append(np.nan)
+                elif metric == "N Iterations":
+                    if kind == "solver":
+                        # Pool iteration lists across all runs
+                        pooled_iter = []
+                        for cn, cr in all_results.items():
+                            if method_key in cr and cr[method_key] is not None:
+                                ev = cr[method_key]["eval"]
+                                if "cpu_n_iter_list" in ev:
+                                    pooled_iter.extend(ev["cpu_n_iter_list"])
+                        pooled_iter = np.array(pooled_iter)
+                        if len(pooled_iter) > 0:
+                            if stat == "max":
+                                values.append(np.max(pooled_iter))
+                            elif stat == "95":
+                                values.append(np.percentile(pooled_iter, 95))
+                            elif stat == "med":
+                                values.append(np.median(pooled_iter))
+                            elif stat == "min":
+                                values.append(np.min(pooled_iter))
+                            else:
+                                values.append(np.nan)
+                        else:
+                            values.append(np.nan)
+                    else:
+                        values.append(np.nan)
+                elif metric == "Full Solve Time [s]":
+                    if kind == "ipopt":
+                        if stat == "max":
+                            values.append(np.max(all_ipopt_solve_times))
+                        elif stat == "95":
+                            values.append(np.percentile(all_ipopt_solve_times, 95))
+                        elif stat == "med":
+                            values.append(np.median(all_ipopt_solve_times))
+                        elif stat == "min":
+                            values.append(np.min(all_ipopt_solve_times))
+                        else:
+                            values.append(np.nan)
+                    elif kind == "solver":
+                        # Pool solve time lists across all runs
+                        pooled_times = []
+                        for cn, cr in all_results.items():
+                            if method_key in cr and cr[method_key] is not None:
+                                ev = cr[method_key]["eval"]
+                                if "cpu_full_solve_time_list" in ev:
+                                    pooled_times.extend(ev["cpu_full_solve_time_list"])
+                        pooled_times = np.array(pooled_times)
+                        if len(pooled_times) > 0:
+                            if stat == "max":
+                                values.append(np.max(pooled_times))
+                            elif stat == "95":
+                                values.append(np.percentile(pooled_times, 95))
+                            elif stat == "med":
+                                values.append(np.median(pooled_times))
+                            elif stat == "min":
+                                values.append(np.min(pooled_times))
+                            else:
+                                values.append(np.nan)
+                        else:
+                            values.append(np.nan)
+                    elif kind == "predictor":
+                        # Use predictor inference time stats
+                        predictor_vals = []
+                        for cn, cr in all_results.items():
+                            if "predictor" in cr and cr["predictor"] is not None:
+                                v = cr["predictor"]["eval"].get(f"cpu_single_inference_time_{stat}", np.nan)
+                                if not pd.isna(v):
+                                    predictor_vals.append(v)
+                        values.append(np.mean(predictor_vals) if predictor_vals else np.nan)
+                    else:
+                        values.append(np.nan)
+
+        # Success Rate
+        if kind == "solver":
+            success_rates = []
+            for cn, cr in all_results.items():
+                if method_key in cr and cr[method_key] is not None:
+                    sr = cr[method_key]["eval"].get("success_rate", np.nan)
+                    if not pd.isna(sr):
+                        success_rates.append(sr)
+            values.append(np.mean(success_rates) if success_rates else np.nan)
+        elif kind == "ipopt":
+            # All IPOPT samples in training data are filtered to be successful
+            values.append(1.0)
+        else:
+            values.append(np.nan)
+
+        return values
+
+    extended_columns = []
+    extended_columns.append(_build_extended_column("solver", kind="solver"))
+    extended_columns.append(_build_extended_column("solver_no_pred", kind="solver"))
+    extended_columns.append(_build_extended_column(None, kind="ipopt"))
+    extended_columns.append(_build_extended_column(None, kind="predictor"))
+
+    extended_df = pd.DataFrame(
+        data=np.array(extended_columns).T,
+        index=multi_index_extended,
+        columns=list(columns_dict_extended.values())
+    )
+
+    # Format table
+    extended_formatted = extended_df.copy().astype(object)
+    for col in extended_formatted.columns:
+        for idx in extended_formatted.index:
+            metric, stat = idx
+            value = extended_formatted.loc[idx, col]
+            if pd.isna(value):
+                extended_formatted.loc[idx, col] = "N/A"
+            elif "Speedup over IPOPT" in metric:
+                extended_formatted.loc[idx, col] = f"{value:.2f}"
+            elif "N Iterations" in metric:
+                extended_formatted.loc[idx, col] = f"{int(value)}"
+            elif "Time" in metric:
+                extended_formatted.loc[idx, col] = as_string_scientific(value)
+            elif "Success Rate" in metric:
+                extended_formatted.loc[idx, col] = f"{value:.4f}"
+            else:
+                extended_formatted.loc[idx, col] = f"{value:.3f}" if isinstance(value, (int, float)) else str(value)
+
+    print(extended_formatted.to_string())
+
+    save_path = RESULTS_PATH.joinpath(SAVE_FOLDER)
+    save_path.mkdir(parents=True, exist_ok=True)
+    latex_path_extended = save_path.joinpath("table_extended_cpu_performance.tex")
+    latex_string_extended = extended_formatted.to_latex(
+        escape=False,
+        column_format='ll' + 'c' * len(extended_formatted.columns)
+    )
+    with open(latex_path_extended, 'w') as f:
+        f.write(latex_string_extended)
+    print(f"Saved extended CPU performance table to {latex_path_extended}")
+else:
+    print("No IPOPT solve time data available for extended performance table")
 
 # Table with Hyperparameters + train time
 print("\n\nTable 5: Hyperparameters + Train Time")
