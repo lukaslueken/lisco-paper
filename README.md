@@ -108,6 +108,7 @@ This example demonstrates LISCO on a nonlinear model predictive control (NMPC) p
 - **`data_sampling.py`**: Generates closed-loop NMPC trajectories using IPOPT
 - **`evaluation.py`**: Comprehensive evaluation framework
 - **`visualization.py`**: Generates figures and tables for NMPC example evaluation
+- **`visualization_scaling_N.py`**: Evaluates solver performance across different problem sizes (N)
 
 ## Requirements
 The project dependencies can be installed using either traditional pip/venv or the modern uv package manager (https://docs.astral.sh/uv/).
