@@ -69,6 +69,26 @@ def as_string_scientific(x):
     else:
         return f"{x:.2e}"
 
+def extract_ipopt_metrics(ipopt_data_path):
+    """Extract IPOPT performance metrics from test data."""
+    try:
+        data = np.load(ipopt_data_path)
+        solve_times = data["solve_time"]
+        status = data["status"]
+        
+        metrics = {
+            "cpu_full_solve_time_list": solve_times,
+            "cpu_full_solve_time_max": np.max(solve_times),
+            "cpu_full_solve_time_95": np.percentile(solve_times, 95),
+            "cpu_full_solve_time_med": np.median(solve_times),
+            "cpu_full_solve_time_min": np.min(solve_times),
+            "success_rate": np.sum(status == "Solve_Succeeded") / len(status),
+        }
+        return metrics
+    except FileNotFoundError:
+        print(f"IPOPT data file not found at {ipopt_data_path}")
+        return None
+
 # %% Plotting Functions
 
 def plot_kkt_convergence(results_dict, ax=None, tol=None):
@@ -97,7 +117,7 @@ def plot_kkt_convergence(results_dict, ax=None, tol=None):
     # Configure plot
     ax.set_xlabel("Iteration")
     ax.set_ylabel(r"$||KKT||_{\infty}$")
-    ax.set_title(r"$\infty$-Norm of KKT conditions over iterations")
+    # ax.set_title(r"$\infty$-Norm of KKT conditions over iterations")
     ax.legend(loc='upper right', fontsize='small')
     ax.set_yscale("log")
     ax.set_xscale("log")
@@ -821,6 +841,297 @@ with open(latex_file_path, 'w') as f:
     f.write(latex_string)
 print(f"Saved Table 6 to {latex_file_path}")
 
+# Table 8: IPOPT CPU Performance Comparison
+print("\n\nTable 8: IPOPT CPU Performance Comparison")
+print("=" * 80)
+
+ipopt_metrics = extract_ipopt_metrics(IPOPT_DATA_PATH)
+if ipopt_metrics:
+    # Create multi-level index structure similar to Table 1
+    metric_names = ["Speedup over IPOPT", "N Iterations", "Full Solve Time [s]"]
+    statistic_names = ["max", "95", "med", "min"]
+    
+    # Create multi-index for rows
+    row_tuples = []
+    for metric in metric_names:
+        for stat in statistic_names:
+            row_tuples.append((metric, stat))
+    row_tuples.append(("Success Rate", ""))
+    
+    multi_index = pd.MultiIndex.from_tuples(row_tuples, names=['Metric', 'Statistic'])
+    
+    # Create data for solver with predictor, solver without predictor, and IPOPT
+    solver_types = ["w. predictor", "w/o. predictor", "IPOPT"]
+    solver_data = []
+    
+    # Solver with predictor
+    if solver_cpu_metrics:
+        data_col = []
+        for metric in metric_names:
+            for stat in statistic_names:
+                value = solver_cpu_metrics[metric][stat]
+                data_col.append(value)
+        data_col.append(solver_cpu_metrics["Success Rate"]["max"])
+        solver_data.append(data_col)
+    
+    # Solver without predictor
+    if solver_no_pred_cpu_metrics:
+        data_col = []
+        for metric in metric_names:
+            for stat in statistic_names:
+                value = solver_no_pred_cpu_metrics[metric][stat]
+                data_col.append(value)
+        data_col.append(solver_no_pred_cpu_metrics["Success Rate"]["max"])
+        solver_data.append(data_col)
+    
+    # IPOPT
+    ipopt_col = []
+    for metric in metric_names:
+        for stat in statistic_names:
+            if metric == "Speedup over IPOPT":
+                ipopt_col.append(np.nan)
+            elif metric == "N Iterations":
+                ipopt_col.append(np.nan)
+            elif metric == "Full Solve Time [s]":
+                ipopt_col.append(ipopt_metrics.get(f"cpu_full_solve_time_{stat}", np.nan))
+        # Add success rate for IPOPT
+        if metric == "Full Solve Time [s]":
+            ipopt_col.append(ipopt_metrics.get("success_rate", np.nan))
+    solver_data.append(ipopt_col)
+    
+    # Create DataFrame with multi-level index and solver types as columns
+    table8_df = pd.DataFrame(
+        data=np.array(solver_data).T,
+        index=multi_index,
+        columns=solver_types
+    )
+    
+    # Format the table for display
+    table8_formatted = table8_df.copy().astype(object)
+    for col in table8_formatted.columns:
+        for idx in table8_formatted.index:
+            metric, stat = idx
+            value = table8_formatted.loc[idx, col]
+            if pd.isna(value):
+                table8_formatted.loc[idx, col] = "N/A"
+            elif "Speedup over IPOPT" in metric:
+                table8_formatted.loc[idx, col] = f"{value:.2f}" if pd.notna(value) else "N/A"
+            elif "N Iterations" in metric:
+                table8_formatted.loc[idx, col] = f"{int(value)}" if pd.notna(value) else "N/A"
+            elif "Time" in metric:
+                table8_formatted.loc[idx, col] = as_string_scientific(value)
+            elif "Success Rate" in metric:
+                table8_formatted.loc[idx, col] = f"{value:.4f}" if pd.notna(value) else "N/A"
+            else:
+                table8_formatted.loc[idx, col] = f"{value:.3f}" if isinstance(value, (int, float)) and pd.notna(value) else str(value)
+    
+    print(table8_formatted.to_string())
+    
+    latex_path8 = RESULTS_PATH.joinpath(SAVE_FOLDER, "table8_ipopt_cpu_performance.tex")
+    latex_string8 = table8_formatted.to_latex(
+        escape=False,
+        column_format='l' + 'c' * len(table8_formatted.columns) + 'c'
+    )
+    with open(latex_path8, 'w') as f:
+        f.write(latex_string8)
+    print(f"Saved Table 8 to {latex_path8}")
+else:
+    print("Could not extract IPOPT metrics")
+
+# Table 9: IPOPT Performance Comparison with both Solvers
+print("\n\nTable 9: IPOPT Performance Comparison (with both Solvers)")
+print("=" * 80)
+
+columns_dict_table9 = {
+    "KKT_inf_max": r"$||KKT||_{\infty}$ (max)",
+    "u0_abs_diff_med": r"$|u_0 - u_0^{*}|$ (median)",
+    "u0_abs_diff_95": r"$|u_0 - u_0^{*}|$ (95th perc.)",
+    "u0_abs_diff_max": r"$|u_0 - u_0^{*}|$ (max)"
+}
+
+# Build comparison data
+index_tuples_table9 = []
+data_rows_table9 = []
+
+# Add baseline methods
+methods_table9 = [
+    (res_approxmpc, "approx. MPC", ""),
+    (res_predictor, "predictor", "")
+]
+
+for res, method_name, step_label in methods_table9:
+    index_tuples_table9.append((method_name, step_label))
+    row = []
+    for col in columns_dict_table9.keys():
+        if col in res["eval"]:
+            row.append(res["eval"][col])
+        else:
+            row.append(np.nan)
+    data_rows_table9.append(row)
+
+# Add solver with predictor results
+n_iter_max_table9 = res_solver["eval"]["gpu_n_iter_max"]
+steps_to_consider_table9 = [1, 5, 20, int(n_iter_max_table9)]
+for step in steps_to_consider_table9:
+    step_label = f"k={step}" if step != n_iter_max_table9 else f"k={n_iter_max_table9} (max)"
+    index_tuples_table9.append(("solver w. predictor", step_label))
+    
+    if step <= len(res_solver["eval"]["trajectory_evaluation"]):
+        eval_dict = res_solver["eval"]["trajectory_evaluation"][step]
+    else:
+        eval_dict = res_solver["eval"]["trajectory_evaluation"][-1]
+    
+    row = []
+    for col in columns_dict_table9.keys():
+        row.append(eval_dict.get(col, np.nan))
+    data_rows_table9.append(row)
+
+# Add solver without predictor results
+n_iter_max_table9_no_pred = res_solver_no_pred["eval"]["gpu_n_iter_max"]
+steps_to_consider_table9_no_pred = [1, 5, 20, int(n_iter_max_table9_no_pred)]
+for step in steps_to_consider_table9_no_pred:
+    step_label = f"k={step}" if step != n_iter_max_table9_no_pred else f"k={n_iter_max_table9_no_pred} (max)"
+    index_tuples_table9.append(("solver w/o. predictor", step_label))
+    
+    if step <= len(res_solver_no_pred["eval"]["trajectory_evaluation"]):
+        eval_dict = res_solver_no_pred["eval"]["trajectory_evaluation"][step]
+    else:
+        eval_dict = res_solver_no_pred["eval"]["trajectory_evaluation"][-1]
+    
+    row = []
+    for col in columns_dict_table9.keys():
+        row.append(eval_dict.get(col, np.nan))
+    data_rows_table9.append(row)
+
+# Create and format comparison table
+multi_index_table9 = pd.MultiIndex.from_tuples(index_tuples_table9, names=['Method', 'Iter.'])
+comparison_df_table9 = pd.DataFrame(data_rows_table9, index=multi_index_table9, columns=columns_dict_table9.values())
+comparison_df_table9_formatted = comparison_df_table9.map(lambda x: as_string_scientific(x) if pd.notna(x) else 'N/A')
+
+print(comparison_df_table9_formatted.to_string())
+
+# Export to LaTeX
+latex_string_table9 = comparison_df_table9_formatted.to_latex(
+    escape=False,
+    float_format="{:.2e}".format,
+    multirow=True,
+    column_format='ll' + 'c' * len(columns_dict_table9.values())
+)
+
+latex_file_path_table9 = RESULTS_PATH.joinpath(SAVE_FOLDER, "table9_ipopt_performance_comparison.tex")
+with open(latex_file_path_table9, 'w') as f:
+    f.write(latex_string_table9)
+print(f"Saved Table 9 to {latex_file_path_table9}")
+
+# Table 10: IPOPT Performance Comparison with Approx. MPC and Predictor
+print("\n\nTable 10: IPOPT Performance Comparison with Approx. MPC and Predictor")
+print("=" * 80)
+
+columns_dict_table10 = {
+    "solver_w_pred": "w. predictor",
+    "solver_wo_pred": "w/o. predictor",
+    "ipopt": "IPOPT",
+    "approxMPC": "approx. MPC",
+    "predictor": "predictor",
+}
+
+metric_names_table10 = ["Speedup over IPOPT", "N Iterations", "Full Solve Time [s]"]
+statistic_names_table10 = ["max", "95", "med", "min"]
+
+row_tuples_table10 = []
+for metric in metric_names_table10:
+    for stat in statistic_names_table10:
+        row_tuples_table10.append((metric, stat))
+row_tuples_table10.append(("Success Rate", ""))
+
+multi_index_table10 = pd.MultiIndex.from_tuples(row_tuples_table10, names=['Metric', 'Statistic'])
+
+def _build_table10_column(eval_data, *, kind, success_rate=0.0):
+    values = []
+    ipopt_solve_times = ipopt_metrics.get("cpu_full_solve_time_list", None)
+    for metric in metric_names_table10:
+        for stat in statistic_names_table10:
+            if metric == "Speedup over IPOPT":
+                if kind == "ipopt":
+                    values.append(np.nan)
+                elif kind == "solver":
+                    values.append(eval_data["Speedup over IPOPT"][stat])
+                elif kind in {"approxMPC", "predictor"}:
+                    method_time = eval_data.get("cpu_single_inference_time_mean", np.nan)
+                    if ipopt_solve_times is None or pd.isna(method_time) or method_time == 0:
+                        values.append(np.nan)
+                    else:
+                        per_sample_speedup = ipopt_solve_times / method_time
+                        if stat == "95":
+                            values.append(np.percentile(per_sample_speedup, 95))
+                        elif stat == "med":
+                            values.append(np.median(per_sample_speedup))
+                        elif stat == "max":
+                            values.append(np.max(per_sample_speedup))
+                        elif stat == "min":
+                            values.append(np.min(per_sample_speedup))
+                        else:
+                            values.append(np.nan)
+                else:
+                    values.append(np.nan)
+            elif metric == "N Iterations":
+                if kind == "solver":
+                    values.append(eval_data["N Iterations"][stat])
+                else:
+                    values.append(np.nan)
+            elif metric == "Full Solve Time [s]":
+                if kind == "ipopt":
+                    values.append(ipopt_metrics.get(f"cpu_full_solve_time_{stat}", np.nan))
+                elif kind == "solver":
+                    values.append(eval_data["Full Solve Time [s]"][stat])
+                else:
+                    values.append(eval_data.get(f"cpu_single_inference_time_{stat}", np.nan))
+        if metric == "Full Solve Time [s]":
+            values.append(success_rate)
+    return values
+
+table10_columns = []
+table10_columns.append(_build_table10_column(solver_cpu_metrics, kind="solver", success_rate=solver_cpu_metrics.get("Success Rate", {}).get("max", np.nan)))
+table10_columns.append(_build_table10_column(solver_no_pred_cpu_metrics, kind="solver", success_rate=solver_no_pred_cpu_metrics.get("Success Rate", {}).get("max", np.nan)))
+table10_columns.append(_build_table10_column({}, kind="ipopt", success_rate=ipopt_metrics.get("success_rate", np.nan)))
+table10_columns.append(_build_table10_column(res_approxmpc["eval"], kind="approxMPC", success_rate=0.0))
+table10_columns.append(_build_table10_column(res_predictor["eval"], kind="predictor", success_rate=0.0))
+
+table10_df = pd.DataFrame(
+    data=np.array(table10_columns).T,
+    index=multi_index_table10,
+    columns=list(columns_dict_table10.values())
+)
+
+table10_formatted = table10_df.copy().astype(object)
+for col in table10_formatted.columns:
+    for idx in table10_formatted.index:
+        metric, stat = idx
+        value = table10_formatted.loc[idx, col]
+        if pd.isna(value):
+            table10_formatted.loc[idx, col] = "N/A"
+        elif "Speedup over IPOPT" in metric:
+            table10_formatted.loc[idx, col] = f"{value:.2f}" if pd.notna(value) else "N/A"
+        elif "N Iterations" in metric:
+            table10_formatted.loc[idx, col] = f"{int(value)}" if pd.notna(value) else "N/A"
+        elif "Time" in metric:
+            table10_formatted.loc[idx, col] = as_string_scientific(value)
+        elif "Success Rate" in metric:
+            table10_formatted.loc[idx, col] = f"{value:.4f}" if pd.notna(value) else "N/A"
+        else:
+            table10_formatted.loc[idx, col] = f"{value:.3f}" if isinstance(value, (int, float)) and pd.notna(value) else str(value)
+
+print(table10_formatted.to_string())
+
+latex_path10 = RESULTS_PATH.joinpath(SAVE_FOLDER, "table10_ipopt_extended_comparison.tex")
+latex_string10 = table10_formatted.to_latex(
+    escape=False,
+    column_format='l' + 'c' * len(table10_formatted.columns) + 'c'
+)
+with open(latex_path10, 'w') as f:
+    f.write(latex_string10)
+print(f"Saved Table 10 to {latex_path10}")
+
 # Table 7: Combined Performance and Infeasibility Comparison
 print("\n\nTable 7: Combined Performance and Infeasibility Comparison")
 print("=" * 80)
@@ -926,7 +1237,7 @@ def plot_speedup_histogram(speedup_factors, ax=None):
     ax.axvline(x=1, color='black', linestyle=':', linewidth=1)
     ax.set_xlabel("Speedup Factor (IPOPT time / LISCO time)")
     ax.set_ylabel("Frequency")
-    ax.set_title("Distribution of Speedup Factors vs. IPOPT")
+    # ax.set_title("Distribution of Speedup Factors vs. IPOPT")
     ax.grid(True, linestyle="--", linewidth=0.3)
     
     # Set x-axis ticks starting at 0 with increments of 1
@@ -986,7 +1297,7 @@ if res_solver is not None and res_solver_no_pred is not None:
         ax.axvline(x=1, color='black', linestyle=':', linewidth=1)
         ax.set_xlabel("Speedup Factor (IPOPT time / LISCO time)")
         ax.set_ylabel("Frequency")
-        ax.set_title("Distribution of Speedup Factors vs. IPOPT")
+        # ax.set_title("Distribution of Speedup Factors vs. IPOPT")
         ax.grid(True, linestyle="--", linewidth=0.3)
 
         # Calculate percentage of cases with speedup > 1 for both methods
